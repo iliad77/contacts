@@ -1,15 +1,19 @@
 import { response, Router } from "express";
 import { query, validationResult, body, matchedData, checkSchema } from "express-validator";
 //import {users} from "./constants.mjs";
-import { resolveIDmiddleware } from "../middlewares/middlewares.mjs";
+import { resolveIDmiddleware,authenticateMiddleware } from "../middlewares/middlewares.mjs";
 import { validateUserData,UserValidation,validateUserUpdate } from "../utils/validationSchema.mjs";
 import { Clients } from "../db.js";
+import bcrypt from "bcrypt" ;
+import jwt from "jsonwebtoken";
+import dotenv from "dotenv"
+dotenv.config()
 
 
 
 const router = Router();
 
-router.get("/api/users",query('method').optional().isInt().withMessage("most be an interger!"), async (request, response) => {
+router.get("/api/users",query('method').optional().isInt().withMessage("most be an interger!"),authenticateMiddleware, async (request, response) => {
     const result = validationResult(request)
     const dbresult = await Clients.query("SELECT * FROM users")
     const user = dbresult.rows
@@ -50,6 +54,8 @@ router.post("/api/users",
     if (!result.isEmpty()) return response.send(result.array()[0].msg);
 
     const { username, email,gender, password, name } = request.body;
+    
+    const hashed_pass = await bcrypt.hash(password,10)
 
     const userExists = await Clients.query(
         'SELECT * FROM users WHERE username = $1 OR email = $2',
@@ -64,7 +70,7 @@ router.post("/api/users",
       }
 
     const new_user = await Clients.query(`INSERT INTO users (username, email, gender, password, name)
-    VALUES ($1, $2, $3, $4, $5)`,[username, email, gender, password, name]);
+    VALUES ($1, $2, $3, $4, $5)`,[username, email, gender, hashed_pass, name]);
 
     return response.status(201).json(`user ${username} created successfully`)
 });
@@ -178,14 +184,22 @@ router.post("/api/login", async (request,response) => {
             message: "Username and password are required" 
         });
     }
-    //const finduser = users.find( user => user.username === username);
-    if (user.rows.length===0 || user.rows[0].password!==password) {
+    console.log(typeof(password),typeof(user.rows[0].password))
+    const STRpassword = password.toString()
+    const matchPass = await bcrypt.compare(STRpassword,user.rows[0].password)
+    console.log(matchPass)
+    if (user.rows.length===0 || !matchPass ) {
         return response.status(401).send({message : "BAD CREDENTIALS"});
     }
-    request.session.user = user.rows;
-    console.log(request.session.user)
-    response.status(200).send({message : `hello ${user.rows[0].name}`})
+    const jwtuser = {username:username , user_id:user.rows[0].id};
+    const accessToke = jwt.sign(jwtuser,process.env.JWT_SECRET,{expiresIn:"12s"})
+    console.log(request.session)
+    request.session.token = accessToke
+    //console.log(request.headers.token)
+    response.status(200).send({message : `hello ${user.rows[0].name}`,token : accessToke})
 });
+
+
 
 
 export default router;

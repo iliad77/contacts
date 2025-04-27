@@ -1,5 +1,9 @@
 import { response } from "express";
 import {Clients} from "../db.js"
+import { request } from "http";
+import jwt from "jsonwebtoken";
+import dotenv from "dotenv"
+dotenv.config()
 
 export const resolveIDmiddleware = async (request, response, next) => {
     try {
@@ -21,4 +25,17 @@ export const resolveIDmiddleware = async (request, response, next) => {
 export const importedmiddleware = (request,response,next) => {
     console.log("imported middleware is working correctlly");
     next();
+}
+
+export const authenticateMiddleware = (request,response,next) => {
+    const authheader = request.session.token;
+    
+    if (authheader == null) return response.status(401).send("you dont have access!");
+
+    jwt.verify(authheader , process.env.JWT_SECRET,(err,jwtuser)=>{
+        if(err) return response.status(403).send("you dont have access!");
+        request.user = jwtuser
+        next()
+    })
+    
 }
